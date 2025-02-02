@@ -9,7 +9,9 @@ fi
 device=$1
 
 # Check for the RAID array state using mdadm
-mdadm_state=$(mdadm --detail "$device" | grep -E 'State : ' | awk -F': ' '{print $2}' | tr -d '[:space:]')
+mdadm_output=$(mdadm --detail "$device")
+mdadm_state=$(echo "$mdadm_output" | grep -E 'State : ' | awk -F': ' '{print $2}' | tr -d '[:space:]')
+mdadm_ceck_status=$(echo "$mdadm_output" | grep -E 'Check Status : ' | awk -F': ' '{print $2}')
 
 # Check if the RAID array is in recovery using /proc/mdstat
 recovery_status=$(cat /proc/mdstat | grep "$device" | grep -oP 'recovery\([^\)]+\)')
@@ -21,6 +23,16 @@ case "$mdadm_state" in
         echo "OK - RAID array is healthy (State: $mdadm_state)"
         exit 0
         ;;
+    "resync" | "resyncing")
+        # Degraded states
+        echo "WARNING - RAID array is in resync (State: $mdadm_state)"
+        exit 1
+        ;;
+    "active,checking" | "clean,checking")
+        # Degraded states
+        echo "WARNING - RAID array is in an checking state (State: $mdadm_state) $mdadm_ceck_status"
+        exit 1
+        ;;
     "degraded" | "failed")
         # Critical states
         echo "CRITICAL - RAID array is in a critical state (State: $mdadm_state)"
@@ -28,7 +40,7 @@ case "$mdadm_state" in
         ;;
     *)
         # Other possible states (or unknown states)
-        echo "UNKNOWN - RAID array is in an unknown state: $mdadm_state"
+        echo "UNKNOWN - RAID array is in an unknown state: $mdadm_output"
         exit 3
         ;;
 esac
@@ -40,5 +52,5 @@ if [ ! -z "$recovery_status" ]; then
 fi
 
 # If no matching state is found, return UNKNOWN
-echo "UNKNOWN - RAID array state is not recognized: $mdadm_state"
+echo "UNKNOWN - RAID array state is not recognized: $mdadm_output"
 exit 3
